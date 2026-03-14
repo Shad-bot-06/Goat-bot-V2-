@@ -1,92 +1,80 @@
 const axios = require("axios");
-const fs = require("fs");
+const fs = require("fs-extra");
 const path = require("path");
 
 module.exports = {
-  name: "edit",
-  description: "AI image edit: upscale, add objects, remove objects, enhance",
+  config: {
+    name: "edit",
+    version: "1.0",
+    author: "AI",
+    countDown: 5,
+    role: 0,
+    shortDescription: "AI image edit",
+    longDescription: "Edit images using AI prompt",
+    category: "ai",
+    guide: {
+      en: "{pn} reply image with prompt"
+    }
+  },
 
-  /**
-   * @param api   - messenger api object
-   * @param event - message event
-   * @param args  - prompt array
-   */
-  async execute(api, event, args) {
+  onStart: async function ({ api, event, args }) {
     try {
-      const prompt = args.join(" ").trim();
 
-      // ❗ Must reply to an image
-      if (!event.messageReply || !event.messageReply.attachments || !event.messageReply.attachments[0].type.includes("photo")) {
+      if (!event.messageReply) {
         return api.sendMessage(
-          "❗ Please reply to a photo and type `!edit <instructions>`!",
+          "❌ Please reply to an image\nExample:\n!edit change hair colour",
           event.threadID,
           event.messageID
         );
       }
 
+      const prompt = args.join(" ");
       if (!prompt) {
         return api.sendMessage(
-          "❗ Provide what you want to change, like:\n`!edit make sky golden`",
+          "❌ Please provide edit prompt",
           event.threadID,
           event.messageID
         );
       }
 
-      // 📷 Fetch the replied photo
       const imageUrl = event.messageReply.attachments[0].url;
-      const imageBuffer = (await axios.get(imageUrl, { responseType: "arraybuffer" })).data;
-      const tempInput = path.join(__dirname, "cache", `input_${Date.now()}.png`);
-      fs.writeFileSync(tempInput, imageBuffer);
 
-      // 🧠 Call OpenAI Image Edit API
-      const openaiKey = process.env.OPENAI_API_KEY;
-      if (!openaiKey) {
-        return api.sendMessage("❌ OpenAI API key not configured!", event.threadID);
-      }
+      const img = (
+        await axios.get(imageUrl, { responseType: "arraybuffer" })
+      ).data;
 
-      const formData = new FormData();
-      formData.append("image", fs.createReadStream(tempInput));
-      formData.append("prompt", prompt);
-      formData.append("size", "1024x1024");
+      const input = path.join(__dirname, "cache", "input.jpg");
+      fs.writeFileSync(input, img);
 
-      // (Optional) add Mask if user wants specific region
-      // formData.append("mask", fs.createReadStream(maskPath));
+      const apiUrl =
+        `https://api.popcat.xyz/imagine?prompt=${encodeURIComponent(prompt)}`;
 
-      const res = await axios.post(
-        "https://api.openai.com/v1/images/edits",
-        formData,
-        {
-          headers: {
-            Authorization: `Bearer ${openaiKey}`,
-            ...formData.getHeaders(),
-          },
-        }
-      );
+      const res = await axios.get(apiUrl);
 
-      // 🖼️ Download returned image
-      const resultUrl = res.data.data[0].url;
-      const finalImg = (await axios.get(resultUrl, { responseType: "arraybuffer" })).data;
-      const tempOut = path.join(__dirname, "cache", `output_${Date.now()}.png`);
-      fs.writeFileSync(tempOut, finalImg);
+      const output = (
+        await axios.get(res.data.url, { responseType: "arraybuffer" })
+      ).data;
 
-      // 📤 Send the edited image
+      const out = path.join(__dirname, "cache", "edited.jpg");
+
+      fs.writeFileSync(out, output);
+
       api.sendMessage(
         {
-          body: `✨ Edited by AI\n🧠 Prompt: ${prompt}`,
-          attachment: fs.createReadStream(tempOut),
+          body: `✨ AI Edited\nPrompt: ${prompt}`,
+          attachment: fs.createReadStream(out)
         },
         event.threadID,
         () => {
-          // cleanup temp files
-          fs.unlinkSync(tempInput);
-          fs.unlinkSync(tempOut);
+          fs.unlinkSync(input);
+          fs.unlinkSync(out);
         },
         event.messageID
       );
 
-    } catch (err) {
-      console.error(err);
-      api.sendMessage("❌ Failed to edit image with AI.", event.threadID, event.messageID);
+    } catch (e) {
+      console.log(e);
+      api.sendMessage("❌ AI edit failed", event.threadID);
     }
-  },
+  }
 };
