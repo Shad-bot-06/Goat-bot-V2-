@@ -1,79 +1,60 @@
 const axios = require("axios");
-const fs = require("fs-extra");
+const fs = require("fs");
 const path = require("path");
 
 module.exports = {
-  config: {
-    name: "edit",
-    version: "2.0",
-    author: "AI",
-    countDown: 5,
-    role: 0,
-    shortDescription: "AI image edit",
-    longDescription: "Edit image using prompt",
-    category: "ai",
-    guide: "{pn} reply photo | {pn} change hair colour"
-  },
+  name: "edit",
+  author: "AI",
+  version: "1.0",
+  description: "AI image edit",
+  usage: "!edit <prompt>",
+  cooldown: 5,
 
-  onStart: async function ({ api, event, args }) {
+  async run({ api, event, args }) {
 
     try {
 
-      if (!event.messageReply) {
+      if (!event.messageReply)
         return api.sendMessage(
-          "❌ Reply to an image\nExample:\n!edit change hair colour",
-          event.threadID,
-          event.messageID
-        );
-      }
-
-      const prompt = args.join(" ");
-      if (!prompt) {
-        return api.sendMessage(
-          "❌ Write what you want to edit",
+          "Reply to an image\nExample: !edit change hair colour",
           event.threadID
         );
-      }
 
-      const attachment = event.messageReply.attachments[0];
+      const prompt = args.join(" ");
 
-      if (attachment.type !== "photo") {
-        return api.sendMessage("❌ Please reply to a photo", event.threadID);
-      }
+      if (!prompt)
+        return api.sendMessage("Write what to edit", event.threadID);
 
-      const imgURL = attachment.url;
+      const imgURL = event.messageReply.attachments[0].url;
 
-      const apiURL =
-        `https://api.popcat.xyz/imagine?prompt=${encodeURIComponent(prompt)}`;
+      const response = await axios.get(
+        `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}`
+      );
 
-      const response = await axios.get(apiURL);
-
-      const img = await axios.get(response.data.url, {
+      const img = await axios.get(response.request.res.responseUrl, {
         responseType: "arraybuffer"
       });
 
-      const filePath = path.join(__dirname, "cache", "edit.png");
+      const filePath = path.join(__dirname, "cache_edit.png");
 
       fs.writeFileSync(filePath, img.data);
 
       api.sendMessage(
         {
-          body: `✨ AI Edited\n🧠 Prompt: ${prompt}`,
+          body: `✨ AI Edit\nPrompt: ${prompt}`,
           attachment: fs.createReadStream(filePath)
         },
         event.threadID,
-        () => fs.unlinkSync(filePath),
-        event.messageID
+        () => fs.unlinkSync(filePath)
       );
 
-    } catch (err) {
+    } catch (e) {
 
-      console.log(err);
+      console.log(e);
 
       api.sendMessage(
-        "❌ AI server error\nTry again later",
-        event.threadID,
-        event.messageID
+        "❌ AI edit failed",
+        event.threadID
       );
 
     }
